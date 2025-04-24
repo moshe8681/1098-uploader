@@ -1,0 +1,58 @@
+from fastapi import FastAPI, UploadFile, Form
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import fitz  # PyMuPDF
+import os
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@app.post("/upload/")
+async def upload_1098(file: UploadFile, property_id: str = Form(...), client_name: str = Form(...)):
+    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
+
+    extracted_data = extract_data_from_pdf(file_path)
+    return JSONResponse(content={
+        "filename": file.filename,
+        "property_id": property_id,
+        "client_name": client_name,
+        "data": extracted_data
+    })
+
+def extract_data_from_pdf(file_path):
+    doc = fitz.open(file_path)
+    text = ""
+    for page in doc:
+        text += page.get_text()
+    
+    return {
+        "interest": extract_amount(text, "interest"),
+        "real_estate_tax": extract_amount(text, "real estate tax"),
+        "insurance": extract_amount(text, "insurance"),
+    }
+
+def extract_amount(text, keyword):
+    keyword = keyword.lower()
+    lines = text.lower().splitlines()
+    for line in lines:
+        if keyword in line:
+            words = line.split()
+            for word in words:
+                try:
+                    amount = float(word.replace(",", "").replace("$", ""))
+                    return amount
+                except:
+                    continue
+    return None
